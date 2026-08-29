@@ -1,0 +1,6 @@
+{
+  "name": "Pocket",
+  "description": "Save articles, videos, and stories to read or listen to anytime with distraction-free reader mode, text-to-speech, and curated discovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
