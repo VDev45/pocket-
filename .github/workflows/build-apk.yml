@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -77,18 +80,47 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || env.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || env.KEY_PASSWORD }}
 
-      - name: Upload Release APK
+      - name: Rename APKs for Release
+        run: |
+          mkdir -p release-apks
+          if compgen -G "app/build/outputs/apk/release/*.apk" > /dev/null; then
+            cp app/build/outputs/apk/release/*.apk release-apks/pocket-release.apk
+          fi
+          if compgen -G "app/build/outputs/apk/debug/*.apk" > /dev/null; then
+            cp app/build/outputs/apk/debug/*.apk release-apks/pocket-debug.apk
+          fi
+          ls -la release-apks/
+
+      - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pocket-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: release-apks/pocket-release.apk
           if-no-files-found: warn
 
-      - name: Upload Debug APK
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pocket-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: release-apks/pocket-debug.apk
           if-no-files-found: warn
+
+      - name: Publish to GitHub Releases
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Pocket App Release v1.0.${{ github.run_number }}
+          body: |
+            ## Pocket Android App Build
+            - Automatic build for commit `${{ github.sha }}`
+            - **pocket-release.apk**: Production signed APK
+            - **pocket-debug.apk**: Debug APK with logging enabled
+          files: |
+            release-apks/pocket-release.apk
+            release-apks/pocket-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
