@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,24 +20,59 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '9.3.1'
 
-      - name: Build Release APK
-        run: gradle assembleRelease
+      - name: Prepare Build Environment
+        run: |
+          # Ensure .env exists for Secrets Gradle plugin
+          if [ -f .env.example ]; then
+            cp .env.example .env
+          else
+            touch .env
+          fi
 
-      - name: Build Debug APK
-        run: gradle assembleDebug
+          # Restore debug keystore from base64 if present
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+          # Prepare release keystore for CI signing if custom keystore not provided
+          if [ ! -f my-upload-key.jks ] && [ -z "$KEYSTORE_PATH" ]; then
+            keytool -genkeypair -v -keystore my-upload-key.jks \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Pocket,O=Pocket,C=US"
+            echo "STORE_PASSWORD=android" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=android" >> $GITHUB_ENV
+          fi
+
+      - name: Build APKs with Gradle
+        run: gradle assembleRelease assembleDebug --stacktrace
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || env.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || env.KEY_PASSWORD }}
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: app-release-unsigned-apk
+          name: pocket-release-apk
           path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: app-debug-apk
+          name: pocket-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
