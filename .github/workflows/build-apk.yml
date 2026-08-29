@@ -36,13 +36,26 @@ jobs:
             touch .env
           fi
 
-          # Restore debug keystore from base64 if present
+          # Restore debug keystore from base64 if present, or generate a valid debug keystore
           if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+            base64 -d debug.keystore.base64 > debug.keystore 2>/dev/null || base64 --decode debug.keystore.base64 > debug.keystore 2>/dev/null || openssl base64 -d -A -in debug.keystore.base64 -out debug.keystore 2>/dev/null || true
           fi
 
-          # Prepare release keystore for CI signing if custom keystore not provided
-          if [ ! -f my-upload-key.jks ] && [ -z "$KEYSTORE_PATH" ]; then
+          if [ ! -s debug.keystore ]; then
+            echo "Creating fresh debug.keystore..."
+            keytool -genkeypair -v -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # Ensure release keystore exists for CI signing if custom keystore not provided
+          if [ ! -s my-upload-key.jks ] && [ -z "$KEYSTORE_PATH" ]; then
+            echo "Creating upload keystore for CI release build..."
             keytool -genkeypair -v -keystore my-upload-key.jks \
               -alias upload \
               -keyalg RSA \
@@ -54,6 +67,9 @@ jobs:
             echo "STORE_PASSWORD=android" >> $GITHUB_ENV
             echo "KEY_PASSWORD=android" >> $GITHUB_ENV
           fi
+
+          echo "Keystore setup verified:"
+          ls -la debug.keystore my-upload-key.jks
 
       - name: Build APKs with Gradle
         run: gradle assembleRelease assembleDebug --stacktrace
